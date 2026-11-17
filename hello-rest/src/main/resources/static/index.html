@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Personenverwaltung</title>
+    <style>
+        body {
+            max-width: 900px;
+            margin: 3rem auto;
+            padding: 0 1rem;
+            color: #202938;
+            font: 16px/1.5 system-ui, sans-serif;
+        }
+
+        h1, h2 {
+            color: #17365d;
+        }
+
+        form, table {
+            width: 100%;
+        }
+
+        label {
+            display: block;
+            margin: 0.75rem 0;
+        }
+
+        input {
+            box-sizing: border-box;
+            display: block;
+            width: 100%;
+            max-width: 32rem;
+            padding: 0.55rem;
+        }
+
+        button {
+            margin: 0.25rem 0.4rem 0.25rem 0;
+            padding: 0.45rem 0.75rem;
+            cursor: pointer;
+        }
+
+        table {
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th, td {
+            border-bottom: 1px solid #d5dbe3;
+            padding: 0.65rem;
+            text-align: left;
+        }
+
+        #message {
+            min-height: 1.5rem;
+            color: #9b1c1c;
+        }
+    </style>
+</head>
+<body>
+<h1>Personenverwaltung</h1>
+
+<section>
+    <h2 id="form-title">Person anlegen</h2>
+    <form id="person-form">
+        <input id="person-id" type="hidden">
+        <label for="name">Name</label>
+        <input id="name" name="name" required maxlength="120">
+        <label for="email">E-Mail</label>
+        <input id="email" name="email" type="email" required maxlength="254">
+        <p>
+            <button type="submit">Speichern</button>
+            <button id="cancel-edit" type="button" hidden>Abbrechen</button>
+        </p>
+    </form>
+    <p id="message" role="status" aria-live="polite"></p>
+</section>
+
+<section>
+    <h2>Alle Personen</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>E-Mail</th>
+            <th>Aktionen</th>
+        </tr>
+        </thead>
+        <tbody id="people"></tbody>
+    </table>
+</section>
+
+<script>
+    const form = document.getElementById("person-form");
+    const idField = document.getElementById("person-id");
+    const nameField = document.getElementById("name");
+    const emailField = document.getElementById("email");
+    const formTitle = document.getElementById("form-title");
+    const cancelEditButton = document.getElementById("cancel-edit");
+    const peopleTable = document.getElementById("people");
+    const message = document.getElementById("message");
+
+    async function request(url, options) {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            throw new Error(`Anfrage fehlgeschlagen (${response.status})`);
+        }
+        return response.status === 204 ? null : response.json();
+    }
+
+    function addActionButton(row, label, action) {
+        const cell = row.cells[2];
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", action);
+        cell.append(button);
+    }
+
+    function renderPeople(people) {
+        peopleTable.replaceChildren();
+        for (const person of people) {
+            const row = peopleTable.insertRow();
+            row.insertCell().textContent = person.name;
+            row.insertCell().textContent = person.email;
+            row.insertCell();
+            addActionButton(row, "Bearbeiten", () => {
+                idField.value = person.id;
+                nameField.value = person.name;
+                emailField.value = person.email;
+                formTitle.textContent = "Person bearbeiten";
+                cancelEditButton.hidden = false;
+                nameField.focus();
+            });
+            addActionButton(row, "Löschen", async () => {
+                if (!window.confirm(`Person „${person.name}“ löschen?`)) {
+                    return;
+                }
+                try {
+                    await request(`/api/people/${person.id}`, {method: "DELETE"});
+                    message.textContent = "Person gelöscht.";
+                    await loadPeople();
+                } catch (error) {
+                    message.textContent = error.message;
+                }
+            });
+        }
+    }
+
+    async function loadPeople() {
+        renderPeople(await request("/api/people"));
+    }
+
+    function resetForm() {
+        form.reset();
+        idField.value = "";
+        formTitle.textContent = "Person anlegen";
+        cancelEditButton.hidden = true;
+    }
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const id = idField.value;
+        const person = {name: nameField.value, email: emailField.value};
+        try {
+            await request(id ? `/api/people/${id}` : "/api/people", {
+                method: id ? "PUT" : "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(person)
+            });
+            resetForm();
+            message.textContent = id ? "Person aktualisiert." : "Person angelegt.";
+            await loadPeople();
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    });
+
+    cancelEditButton.addEventListener("click", resetForm);
+    loadPeople().catch((error) => {
+        message.textContent = error.message;
+    });
+</script>
+</body>
+</html>
